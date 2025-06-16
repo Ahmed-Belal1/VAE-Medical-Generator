@@ -6,7 +6,7 @@ class VAE(nn.Module):
         super().__init__()
         # encoder
         self.encoder = nn.Sequential(
-            nn.Flatten(),
+            nn.Flatten(), 
             nn.Linear(28*28, 400),
             nn.ReLU(),
         )
