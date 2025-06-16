@@ -1,0 +1,23 @@
+# .gitignore
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.venv/
+.env
+*.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Outputs, logs, models
+outputs/
+*.pth
+*.pt

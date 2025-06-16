@@ -1,0 +1,7 @@
+torch
+torchvision
+pytorch-lightning
+tensorboard
+seaborn
+timm
+medmnist
