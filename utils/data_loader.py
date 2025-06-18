@@ -5,6 +5,12 @@ from torch.utils.data import DataLoader
 from medmnist import INFO
 from medmnist.dataset import PathMNIST, ChestMNIST, DermaMNIST
 
+DATASET_CLASSES = {
+    "PathMNIST": PathMNIST,
+    "ChestMNIST": ChestMNIST,
+    "DermaMNIST": DermaMNIST,
+}
+
 def get_transforms():
     return transforms.Compose([
         transforms.ToTensor(),
@@ -13,7 +19,8 @@ def get_transforms():
 
 def get_dataset(dataset_name, split, download=True, transform=None):
     info = INFO[dataset_name]
-    dataset_class = info['python_class']
+    dataset_class_name = info["python_class"]
+    dataset_class = DATASET_CLASSES[dataset_class_name] 
     dataset = dataset_class(split=split, transform=transform, download=download)
     return dataset
 
