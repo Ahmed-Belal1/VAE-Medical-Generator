@@ -39,7 +39,8 @@ for epoch in range(1, epochs + 1):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
 
     for batch in pbar:
-        inputs = batch['image'].to(device, dtype=torch.float)
+        inputs, labels = batch
+        inputs = inputs.to(device, dtype=torch.float)
         optimizer.zero_grad()
 
         recon_batch, mu, logvar = model(inputs)
