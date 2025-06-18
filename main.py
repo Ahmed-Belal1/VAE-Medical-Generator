@@ -29,7 +29,9 @@ criterion = nn.BCELoss(reduction='sum')  # use binary cross-entropy for image re
 
 # === Training Loop ===
 def loss_function(recon_x, x, mu, logvar):
-    BCE = criterion(recon_x, x.view(-1, 28 * 28))
+    recon_x = recon_x.view(recon_x.size(0), -1)
+    x = x.view(x.size(0), -1)
+    BCE = criterion(recon_x, x)
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return BCE + KLD
 
@@ -39,7 +41,8 @@ for epoch in range(1, epochs + 1):
     pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
 
     for batch in pbar:
-        inputs = batch['image'].to(device, dtype=torch.float)
+        inputs, labels = batch
+        inputs = inputs.to(device, dtype=torch.float)
         optimizer.zero_grad()
 
         recon_batch, mu, logvar = model(inputs)
