@@ -13,8 +13,7 @@ DATASET_CLASSES = {
 
 def get_transforms():
     return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[.5], std=[.5])
+        transforms.ToTensor()
     ])
 
 def get_dataset(dataset_name, split, download=True, transform=None):
