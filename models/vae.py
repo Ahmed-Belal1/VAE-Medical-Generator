@@ -7,7 +7,7 @@ class VAE(nn.Module):
         # encoder
         self.encoder = nn.Sequential(
             nn.Flatten(), 
-            nn.Linear(28*28, 400),
+            nn.Linear(3*28*28, 400),
             nn.ReLU(),
         )
         self.fc_mu = nn.Linear(400, latent_dim)
@@ -17,7 +17,7 @@ class VAE(nn.Module):
         self.decoder = nn.Sequential(
             nn.Linear(latent_dim, 400),
             nn.ReLU(),
-            nn.Linear(400, 28*28),
+            nn.Linear(400, 3*28*28),
             nn.Sigmoid(),
         )
 
@@ -33,4 +33,6 @@ class VAE(nn.Module):
     def forward(self, x):
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
-        return self.decoder(z), mu, logvar
+        out = self.decoder(z)
+        out = out.view(-1, 3, 28, 28)
+        return out, mu, logvar

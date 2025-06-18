@@ -29,7 +29,9 @@ criterion = nn.BCELoss(reduction='sum')  # use binary cross-entropy for image re
 
 # === Training Loop ===
 def loss_function(recon_x, x, mu, logvar):
-    BCE = criterion(recon_x, x.view(-1, 28 * 28))
+    recon_x = recon_x.view(recon_x.size(0), -1)
+    x = x.view(x.size(0), -1)
+    BCE = criterion(recon_x, x)
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     return BCE + KLD
 
