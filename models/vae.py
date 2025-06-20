@@ -1,7 +1,8 @@
 import torch
 from torch import nn
+from .base_vae import BaseVAE
 
-class VAE(nn.Module):
+class VAE(BaseVAE):
     def __init__(self, latent_dim=20):
         super().__init__()
         # encoder
