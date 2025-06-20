@@ -5,6 +5,10 @@ import torch.optim as optim
 from models.vae import VAE
 from utils.data_loader import get_dataloaders
 
+from utils.visualizer import test_and_plot
+from utils.visualizer import plot_epoch_loss
+
+
 from tqdm import tqdm
 import os
 
@@ -15,7 +19,8 @@ batch_size = 64
 epochs = 10
 lr = 1e-3
 latent_dim = 20
-save_dir = "outputs/"
+save_dir = "outputs"
+epochs_dir = os.path.join(save_dir, "epochs")
 
 os.makedirs(save_dir, exist_ok=True)
 
@@ -26,6 +31,9 @@ train_loader, val_loader, test_loader = get_dataloaders(dataset_name, batch_size
 model = VAE(latent_dim=latent_dim).to(device)
 optimizer = optim.Adam(model.parameters(), lr=lr)
 criterion = nn.BCELoss(reduction='sum')  # use binary cross-entropy for image reconstruction
+
+
+epoch_losses = []
 
 # === Training Loop ===
 def loss_function(recon_x, x, mu, logvar):
@@ -53,8 +61,14 @@ for epoch in range(1, epochs + 1):
 
         pbar.set_postfix(loss=loss.item())
 
-    print(f"Epoch {epoch}, Average loss: {train_loss / len(train_loader.dataset):.4f}")
+    avg_epoch_loss = train_loss / len(train_loader.dataset)
+    epoch_losses.append(avg_epoch_loss)
+
+    print(f"Epoch {epoch}, Average loss: {avg_epoch_loss:.4f}")
 
     # Save sample outputs (optional)
     if epoch % 5 == 0:
-        torch.save(model.state_dict(), os.path.join(save_dir, f"vae_epoch{epoch}.pth"))
+        torch.save(model.state_dict(), os.path.join(epochs_dir, f"vae_epoch{epoch}.pth"))
+        test_and_plot(model, test_loader, device, epoch, save_dir)
+        plot_epoch_loss(epoch_losses, interval=1, save_path= os.path.join(save_dir+'/graphs', f"vae_loss_epoch{epoch}.png"))
+
