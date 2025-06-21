@@ -1,91 +1,97 @@
 import os
-import yaml
-import argparse
-import numpy as np
 from pathlib import Path
-from models import *
+import torch.backends.cudnn as cudnn
+import multiprocessing
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+
 from models import vanilla_vae
 from experiment import VAEXperiment
-import torch.backends.cudnn as cudnn
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from dataset import VAEDataset
 
-#Change these config parameters accordingly
-config = {
-    'VanillaVAE': {
-        'model_params': {
-            'name': 'VanillaVAE',
-            'in_channels': 3,
-            'latent_dim': 128
-        },
-        'data_params': {
-            'data_path': "Data/",
-            'train_batch_size': 64,
-            'val_batch_size':  64,
-            'patch_size': 64,
-            'data_name': 'chestmnist',
-            'num_workers': 4,
-        },
-        'exp_params': {
-            'LR': 0.005,
-            'weight_decay': 0.0,
-            'scheduler_gamma': 0.95,
-            'kld_weight': 0.00025,
-            'manual_seed': 1265
-        },
-        'trainer_params': {
-            'max_epochs': 100
-        },
-        'logging_params': {
-            'save_dir': "logs/",
-            'name': "VanillaVAE"      
+def main():
+    # MedMNIST-compatible config
+    config = {
+        'VanillaVAE': {
+            'model_params': {
+                'name': 'VanillaVAE',
+                'in_channels': 1,         # Change to 3 if using RGB version of MedMNIST
+                'latent_dim': 28
+            },
+            'data_params': {
+                'data_path': "Data/",
+                'train_batch_size': 64,
+                'val_batch_size': 64,
+                'patch_size': 28,         # MedMNIST images are 28x28
+                'data_name': 'chestmnist', # Change based on MedMNIST subset you're using
+                'num_workers': 4,
+            },
+            'exp_params': {
+                'LR': 0.001,
+                'weight_decay': 0.0,
+                'scheduler_gamma': 0.95,
+                'kld_weight': 0.00025,
+                'manual_seed': 42
+            },
+            'trainer_params': {
+                'max_epochs': 100,
+                'accelerator': 'auto',
+                'devices': 1
+            },
+            'logging_params': {
+                'save_dir': "logs/",
+                'name': "VanillaVAE_MedMNIST"
+            }
         }
     }
-}
 
-models = {
-    'VanillaVAE': vanilla_vae.VanillaVAE,
-}
+    models = {
+        'VanillaVAE': vanilla_vae.VanillaVAE,
+    }
 
-#CHANGE MODEL TYPE HERE
-MODEL = 'VanillaVAE'
+    MODEL = 'VanillaVAE'
+    cfg = config[MODEL]
 
-# Initializing logger
-tb_logger =  TensorBoardLogger(save_dir=config[MODEL]['logging_params']['save_dir'],
-                               name=config[MODEL]['model_params']['name'],)
+    # Logger
+    tb_logger = TensorBoardLogger(
+        save_dir=cfg['logging_params']['save_dir'],
+        name=cfg['logging_params']['name'],
+    )
 
-# For reproducibility
-seed_everything(config[MODEL]['exp_params']['manual_seed'], True)
+    # Seed
+    seed_everything(cfg['exp_params']['manual_seed'], workers=True)
 
-model = models[config[MODEL]['model_params']['name']](**config[MODEL]['model_params'])
-experiment = VAEXperiment(model,
-                          config[MODEL]['exp_params'])
+    # Model + Experiment
+    model = models[cfg['model_params']['name']](**cfg['model_params'])
+    experiment = VAEXperiment(model, cfg['exp_params'])
 
-# Setting up PyTorch Lightning Datamodule object
-data = VAEDataset(**config[MODEL]["data_params"], pin_memory=True)
+    # Data
+    data = VAEDataset(**cfg["data_params"], pin_memory=True)
+    data.setup()
 
-data.setup()
+    # Trainer
+    runner = Trainer(
+        logger=tb_logger,
+        callbacks=[
+            LearningRateMonitor(),
+            ModelCheckpoint(
+                save_top_k=2,
+                dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),
+                monitor="val_loss",
+                save_last=True,
+            )
+        ],
+        **cfg['trainer_params']
+    )
 
-# Initializing trainer object
-runner = Trainer(logger=tb_logger,
-                 callbacks=[
-                     LearningRateMonitor(),
-                     ModelCheckpoint(save_top_k=2,
-                                     dirpath =os.path.join(tb_logger.log_dir , "checkpoints"),
-                                     monitor= "val_loss",
-                                     save_last= True),
-                 ],
-                 strategy='ddp_notebook',
-                 **config[MODEL]['trainer_params'])
+    # Output dirs
+    Path(f"{tb_logger.log_dir}/Samples").mkdir(exist_ok=True, parents=True)
+    Path(f"{tb_logger.log_dir}/Reconstructions").mkdir(exist_ok=True, parents=True)
 
+    print(f"======= Training {cfg['model_params']['name']} on {cfg['data_params']['data_name']} =======")
+    runner.fit(experiment, data)
 
-# Samples and reconstructions logged to Google Drive
-Path(f"{tb_logger.log_dir}/Samples").mkdir(exist_ok=True, parents=True)
-Path(f"{tb_logger.log_dir}/Reconstructions").mkdir(exist_ok=True, parents=True)
-
-# Fitting trainer object
-print(f"======= Training {config[MODEL]['model_params']['name']} =======")
-runner.fit(experiment, data)
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    main()
