@@ -10,7 +10,7 @@ def test_and_plot(model, test_loader, device, epoch, save_dir, num_images=8):
         for batch in test_loader:
             inputs, _ = batch
             inputs = inputs.to(device, dtype=torch.float)
-            recon, _, _ = model(inputs)
+            recon, _, _, _ = model(inputs)
 
             inputs = inputs[:num_images].cpu()
             recon = recon[:num_images].cpu()

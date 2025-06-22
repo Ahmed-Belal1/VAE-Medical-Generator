@@ -15,7 +15,14 @@ from medmnist import INFO
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from pytorch_lightning import LightningDataModule
+from medmnist.dataset import PathMNIST, ChestMNIST, DermaMNIST
 
+
+DATASET_CLASSES = {
+    "PathMNIST": PathMNIST,
+    "ChestMNIST": ChestMNIST,
+    "DermaMNIST": DermaMNIST,
+}
 # Add your custom dataset class here
 class MyDataset(Dataset):
     def __init__(self):
@@ -67,19 +74,27 @@ class VAEDataset(LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         info = INFO[self.data_name]
-        DataClass = getattr(medmnist, info['python_class'])
+        dataset_class_name = info["python_class"]
+        dataset_class = DATASET_CLASSES[dataset_class_name] 
+        # DataClass = getattr(medmnist, info['python_class'])
 
         chest_transforms = transforms.Compose([
             transforms.ToTensor(),
-            transforms.CenterCrop(28),
-            transforms.Resize(28),
-            transforms.Normalize(mean=[.5], std=[.5])
+            # transforms.CenterCrop(28),
+            # transforms.Resize(28),
+            # transforms.Normalize(mean=[.5], std=[.5])
         ])
 
-        self.train_dataset = DataClass(split='train', transform=chest_transforms, download=True)
+        # chest_transforms = transforms.Compose([
+        #     transforms.ToTensor(),
+        #     transforms.Lambda(lambda x: x.repeat(3, 1, 1) if x.shape[0] == 1 else x),  # Convert 1-channel to 3-channel
+        #     transforms.Resize((28, 28)),  # Resize to the expected input size
+        # ])
+
+        self.train_dataset = dataset_class(split='train', transform=chest_transforms, download=True)
 
 
-        self.val_dataset = DataClass(split='test', transform=chest_transforms, download=True)
+        self.val_dataset = dataset_class(split='test', transform=chest_transforms, download=True)
 
         
     def train_dataloader(self) -> DataLoader:
@@ -108,4 +123,3 @@ class VAEDataset(LightningDataModule):
             shuffle=True,
             pin_memory=self.pin_memory,
         )
-     

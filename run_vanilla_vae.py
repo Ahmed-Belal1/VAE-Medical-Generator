@@ -10,13 +10,15 @@ from models import vanilla_vae
 from experiment import VAEXperiment
 from dataset import VAEDataset
 
+from callbacks.visualizer_callback import VAEVisualizationCallback
+
 def main():
     # MedMNIST-compatible config
     config = {
         'VanillaVAE': {
             'model_params': {
                 'name': 'VanillaVAE',
-                'in_channels': 1,         # Change to 3 if using RGB version of MedMNIST
+                'in_channels': 3,         # Change to 3 if using RGB version of MedMNIST
                 'latent_dim': 28
             },
             'data_params': {
@@ -24,7 +26,7 @@ def main():
                 'train_batch_size': 64,
                 'val_batch_size': 64,
                 'patch_size': 28,         # MedMNIST images are 28x28
-                'data_name': 'chestmnist', # Change based on MedMNIST subset you're using
+                'data_name': 'pathmnist', # Change based on MedMNIST subset you're using
                 'num_workers': 4,
             },
             'exp_params': {
@@ -35,7 +37,7 @@ def main():
                 'manual_seed': 42
             },
             'trainer_params': {
-                'max_epochs': 100,
+                'max_epochs': 50,
                 'accelerator': 'auto',
                 'devices': 1
             },
@@ -70,6 +72,13 @@ def main():
     data = VAEDataset(**cfg["data_params"], pin_memory=True)
     data.setup()
 
+    #Visualizer
+    visualization_cb = VAEVisualizationCallback(
+        test_loader=data.train_dataloader(),
+        save_dir=os.path.join(tb_logger.log_dir, "plots"),
+        interval=1,  # or whatever interval you like
+        num_images=8
+    )
     # Trainer
     runner = Trainer(
         logger=tb_logger,
@@ -80,7 +89,8 @@ def main():
                 dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),
                 monitor="val_loss",
                 save_last=True,
-            )
+            ),
+            visualization_cb
         ],
         **cfg['trainer_params']
     )
