@@ -13,12 +13,13 @@ def show_and_save(file_name,img):
     fig.suptitle(file_name, fontsize=14, fontweight='bold')
     plt.imshow(npimg)
     plt.imsave(f,npimg)
-def plot_loss(loss_list):
+def plot_loss(loss_list, title="Loss", file_name=None):
     plt.figure(figsize=(10,5))
-    plt.title("Loss During Training")
-    plt.plot(loss_list,label="Loss")
-
-    plt.xlabel("iterations")
+    plt.title(title)
+    plt.plot(loss_list, label=title)
+    plt.xlabel("Iterations")
     plt.ylabel("Loss")
     plt.legend()
+    if file_name:
+        plt.savefig(f"{file_name}.png", dpi=300)
     plt.show()

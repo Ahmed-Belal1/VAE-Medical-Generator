@@ -10,6 +10,7 @@ import torchvision.utils as vutils
 from torchvision.datasets import CelebA
 from torch.utils.data import DataLoader
 from typing import List, Callable, Union, Any, TypeVar, Tuple
+from utils import plot_loss  # If your plot_loss function is saved in a utils file
 
 Tensor = TypeVar('Tensor')
 
@@ -24,6 +25,9 @@ class VAEXperiment(pl.LightningModule):
         self.params = params
         self.curr_device = None
         self.hold_graph = False
+        self.automatic_optimization = False
+        self.train_losses = []
+        self.val_losses = []
         try:
             self.hold_graph = self.params['retain_first_backpass']
         except:
@@ -32,19 +36,34 @@ class VAEXperiment(pl.LightningModule):
     def forward(self, input: Tensor, **kwargs) -> Tensor:
         return self.model(input, **kwargs)
 
-    def training_step(self, batch, batch_idx, optimizer_idx = 0):
+    def training_step(self, batch, batch_idx):
         real_img, labels = batch
         self.curr_device = real_img.device
 
-        results = self.forward(real_img, labels = labels)
-        train_loss = self.model.loss_function(*results,
-                                              M_N = self.params['kld_weight'], #al_img.shape[0]/ self.num_train_imgs,
-                                              optimizer_idx=optimizer_idx,
-                                              batch_idx = batch_idx)
+        results = self.forward(real_img, labels=labels)
 
-        self.log_dict({key: val.item() for key, val in train_loss.items()}, sync_dist=True)
+        optimizers = self.optimizers()
+        if not isinstance(optimizers, (list, tuple)):
+            optimizers = [optimizers]
 
-        return train_loss['loss']
+        # Optionally: Handle multiple optimizers differently
+        for idx, opt in enumerate(optimizers):
+            loss_dict = self.model.loss_function(
+                *results,
+                M_N=self.params['kld_weight'],
+                optimizer_idx=idx,
+                batch_idx=batch_idx
+            )
+
+            loss = loss_dict['loss']
+            self.manual_backward(loss, retain_graph=self.hold_graph)
+            opt.step()
+            opt.zero_grad()
+
+            self.log_dict({f"loss_opt{idx}": loss.item(), **{f"{k}_opt{idx}": v.item() for k, v in loss_dict.items() if k != 'loss'}}, sync_dist=True)
+        self.train_losses.append(loss_dict['loss'].item())
+        return loss_dict['loss']
+
 
     def validation_step(self, batch, batch_idx, optimizer_idx = 0):
         real_img, labels = batch
@@ -57,7 +76,7 @@ class VAEXperiment(pl.LightningModule):
                                             batch_idx = batch_idx)
 
         self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
-
+        self.val_losses.append(val_loss['loss'].item())
         
     def on_validation_end(self) -> None:
         self.sample_images()
@@ -78,7 +97,7 @@ class VAEXperiment(pl.LightningModule):
                           nrow=12)
 
         try:
-            samples = self.model.sample(144,
+            samples = self.model.sample(20,
                                         self.curr_device,
                                         labels = test_label)
             vutils.save_image(samples.cpu().data,
@@ -125,3 +144,8 @@ class VAEXperiment(pl.LightningModule):
                 return optims, scheds
         except:
             return optims
+    
+
+    def on_train_end(self):
+        plot_loss(self.train_losses, title="Training Loss", file_name="training_loss")
+        plot_loss(self.val_losses, title="Validation Loss", file_name="validation_loss")
