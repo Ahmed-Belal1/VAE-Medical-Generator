@@ -21,3 +21,4 @@ build/
 outputs/
 *.pth
 *.pt
+logs/
