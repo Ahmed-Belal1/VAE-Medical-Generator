@@ -19,13 +19,13 @@ def main():
             'model_params': {
                 'name': 'VanillaVAE',
                 'in_channels': 3,         # Change to 3 if using RGB version of MedMNIST
-                'latent_dim': 28
+                'latent_dim': 128
             },
             'data_params': {
                 'data_path': "Data/",
                 'train_batch_size': 64,
                 'val_batch_size': 64,
-                'patch_size': 28,         # MedMNIST images are 28x28
+                'patch_size': 32,         # MedMNIST images are 28x28
                 'data_name': 'pathmnist', # Change based on MedMNIST subset you're using
                 'num_workers': 4,
             },
@@ -37,7 +37,7 @@ def main():
                 'manual_seed': 42
             },
             'trainer_params': {
-                'max_epochs': 50,
+                'max_epochs': 100,
                 'accelerator': 'auto',
                 'devices': 1
             },
@@ -77,7 +77,7 @@ def main():
         test_loader=data.train_dataloader(),
         save_dir=os.path.join(tb_logger.log_dir, "plots"),
         interval=1,  # or whatever interval you like
-        num_images=8
+        num_images=20
     )
     # Trainer
     runner = Trainer(
