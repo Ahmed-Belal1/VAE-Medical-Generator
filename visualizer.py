@@ -2,7 +2,7 @@ import os
 import matplotlib.pyplot as plt
 import torch
 
-def test_and_plot(model, test_loader, device, epoch, save_dir, num_images=8):
+def test_and_plot(model, test_loader, device, epoch, save_dir, num_images=20):
     model.eval()
     os.makedirs(os.path.join(save_dir, "test_output"), exist_ok=True)
 
@@ -15,32 +15,34 @@ def test_and_plot(model, test_loader, device, epoch, save_dir, num_images=8):
             inputs = inputs[:num_images].cpu()
             recon = recon[:num_images].cpu()
 
-            fig, axes = plt.subplots(2, num_images, figsize=(2 * num_images, 4))
+            cols = num_images // 2
+            fig, axes = plt.subplots(4, cols, figsize=(cols * 2, 8))
 
             for i in range(num_images):
+                row_offset = 0 if i < cols else 1
+                col = i % cols
+
                 # --- Input image ---
                 img = inputs[i]
                 if img.shape[0] == 1:
                     img = img.squeeze(0)
-                    axes[0, i].imshow(img, cmap='gray')
+                    axes[row_offset, col].imshow(img, cmap='gray')
                 else:
-                    img = img.permute(1, 2, 0)  # (C, H, W) → (H, W, C)
-                    axes[0, i].imshow(img)
-
-                axes[0, i].axis('off')
+                    img = img.permute(1, 2, 0)
+                    axes[row_offset, col].imshow(img)
+                axes[row_offset, col].axis('off')
 
                 # --- Reconstructed image ---
                 recon_img = recon[i]
                 if recon_img.shape[0] == 1:
                     recon_img = recon_img.squeeze(0)
-                    axes[1, i].imshow(recon_img, cmap='gray')
+                    axes[row_offset + 2, col].imshow(recon_img, cmap='gray')
                 else:
                     recon_img = recon_img.permute(1, 2, 0)
-                    axes[1, i].imshow(recon_img)
+                    axes[row_offset + 2, col].imshow(recon_img)
+                axes[row_offset + 2, col].axis('off')
 
-                axes[1, i].axis('off')
-
-            plt.suptitle(f"Top: Original — Bottom: Reconstruction (Epoch {epoch})")
+            plt.suptitle(f"Top 2 Rows: Original — Bottom 2 Rows: Reconstruction (Epoch {epoch})")
             out_path = os.path.join(save_dir, "test_output", f"epoch_{epoch}.png")
             plt.savefig(out_path)
             plt.close()
