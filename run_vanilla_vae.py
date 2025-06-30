@@ -19,7 +19,7 @@ def main():
             'model_params': {
                 'name': 'VanillaVAE',
                 'in_channels': 3,         # Change to 3 if using RGB version of MedMNIST
-                'latent_dim': 128
+                'latent_dim': 64
             },
             'data_params': {
                 'data_path': "Data/",
@@ -30,10 +30,10 @@ def main():
                 'num_workers': 4,
             },
             'exp_params': {
-                'LR': 0.001,
-                'weight_decay': 0.0,
+                'LR': 0.00005,
+                'weight_decay': 0.001,
                 'scheduler_gamma': 0.95,
-                'kld_weight': 0.00025,
+                'kld_weight': 0.00005,
                 'manual_seed': 42
             },
             'trainer_params': {
