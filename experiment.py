@@ -61,6 +61,8 @@ class VAEXperiment(pl.LightningModule):
             opt.zero_grad()
 
             self.log_dict({f"loss_opt{idx}": loss.item(), **{f"{k}_opt{idx}": v.item() for k, v in loss_dict.items() if k != 'loss'}}, sync_dist=True)
+        
+        self.log("train_loss", loss, prog_bar=True, on_epoch=True, logger=True)
         self.train_losses.append(loss_dict['loss'].item())
         return loss_dict['loss']
 

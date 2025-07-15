@@ -4,13 +4,15 @@ import torch.backends.cudnn as cudnn
 import multiprocessing
 from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint,EarlyStopping
 
 from models import vanilla_vae
 from experiment import VAEXperiment
 from dataset import VAEDataset
 
 from callbacks.visualizer_callback import VAEVisualizationCallback
+from callbacks.early_stop_callback import EarlyStoppingMonitor
+
 
 def main():
     # MedMNIST-compatible config
@@ -23,17 +25,17 @@ def main():
             },
             'data_params': {
                 'data_path': "Data/",
-                'train_batch_size': 64,
-                'val_batch_size': 64,
+                'train_batch_size': 128,
+                'val_batch_size': 128,
                 'patch_size': 32,         # MedMNIST images are 28x28
                 'data_name': 'pathmnist', # Change based on MedMNIST subset you're using
                 'num_workers': 4,
             },
             'exp_params': {
-                'LR': 0.00005,
-                'weight_decay': 0.001,
+                'LR': 1e-3,
+                'weight_decay': 1e-5,
                 'scheduler_gamma': 0.95,
-                'kld_weight': 0.00005,
+                'kld_weight':  0.001,
                 'manual_seed': 42
             },
             'trainer_params': {
@@ -72,12 +74,16 @@ def main():
     data = VAEDataset(**cfg["data_params"], pin_memory=True)
     data.setup()
 
-    #Visualizer
+    # Create EarlyStoppingMonitor
+    early_stop_cb = EarlyStoppingMonitor(monitor="val_loss", patience=15, mode="min")
+
+    # Create Visualizer with reference to EarlyStoppingMonitor
     visualization_cb = VAEVisualizationCallback(
-        test_loader=data.train_dataloader(),
+        test_loader=data.val_dataloader(),
         save_dir=os.path.join(tb_logger.log_dir, "plots"),
-        interval=1,  # or whatever interval you like
-        num_images=20
+        interval=5,
+        num_images=20,
+        early_stop_monitor=early_stop_cb  # ✅ pass the object itself
     )
     # Trainer
     runner = Trainer(
@@ -85,13 +91,17 @@ def main():
         callbacks=[
             LearningRateMonitor(),
             ModelCheckpoint(
-                save_top_k=2,
+                save_top_k=10,
                 dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),
                 monitor="val_loss",
                 save_last=True,
+                every_n_epochs=10
             ),
+            early_stop_cb,   # ✅ add EarlyStoppingMonitor
             visualization_cb
         ],
+        check_val_every_n_epoch=1,
+        val_check_interval=1.0,
         **cfg['trainer_params']
     )
 
