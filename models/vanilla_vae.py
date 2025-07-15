@@ -23,7 +23,7 @@ class VanillaVAE(BaseVAE):
         modules = []
         if hidden_dims is None:
             # hidden_dims = [32, 64, 128, 256, 256, 512, 512]
-            hidden_dims = [32, 64, 128, 256,]
+            hidden_dims = [32, 64, 128, 256]
 
         # Build Encoder
         for h_dim in hidden_dims:
@@ -133,31 +133,46 @@ class VanillaVAE(BaseVAE):
         z = self.reparameterize(mu, log_var)
         return  [self.decode(z), input, mu, log_var]
 
-    def loss_function(self,
-                      *args,
-                      **kwargs) -> dict:
+    def loss_function(
+    self,
+    *args,
+    **kwargs
+) -> dict:
         """
-        Computes the VAE loss function.
-        KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
-        :param args:
-        :param kwargs:
-        :return:
-        """
+        Computes the VAE loss function:
+        Loss = Reconstruction Loss + KL Divergence
 
+        KL(N(\mu, \sigma), N(0, 1)) = 
+            -0.5 * sum(1 + log_var - mu^2 - exp(log_var))
+
+        :param args: [recons, input, mu, log_var]
+        :param kwargs: 'M_N' minibatch ratio
+        :return: dict with loss, reconstruction loss, KL divergence
+        """
         recons = args[0]
         input = args[1]
         mu = args[2]
         log_var = args[3]
-        # print(f"recons shape: {recons.shape}")
-        # print(f"input shape: {input.shape}")
-        kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
-        recons_loss =F.mse_loss(recons, input)
 
+        # Minibatch weight, default to 1.0 if not provided
+        kld_weight = kwargs.get('M_N', 1.0)
 
-        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+        # --- Reconstruction Loss ---
+        # Sum over image dimensions, then mean over batch
+        recons_loss = F.mse_loss(recons, input, reduction='sum') / input.size(0)
+
+        # --- KL Divergence ---
+        kld_loss = torch.sum(-0.5 * (1 + log_var - mu.pow(2) - log_var.exp()), dim=1)
+        kld_loss = torch.mean(kld_loss, dim=0)
 
         loss = recons_loss + kld_weight * kld_loss
-        return {'loss': loss, 'Reconstruction_Loss':recons_loss.detach(), 'KLD':-kld_loss.detach()}
+
+        return {
+            'loss': loss,
+            'Reconstruction_Loss': recons_loss.detach(),
+            'KLD': kld_loss.detach()
+        }
+
 
     def sample(self,
                num_samples:int,
