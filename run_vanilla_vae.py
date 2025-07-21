@@ -24,12 +24,12 @@ def main():
                 'latent_dim': 64
             },
             'data_params': {
-                'data_path': "Data/",
+                'data_dir': "Data/",
+                'data_names': ['chestmnist', 'pathmnist', 'dermamnist'],
                 'train_batch_size': 128,
-                'val_batch_size': 128,
-                'patch_size': 32,         # MedMNIST images are 28x28
-                'data_name': 'pathmnist', # Change based on MedMNIST subset you're using
-                'num_workers': 4,
+                'val_batch_size': 256,
+                'patch_size': 32,
+                'num_workers': 4
             },
             'exp_params': {
                 'LR': 1e-3,
@@ -109,7 +109,7 @@ def main():
     Path(f"{tb_logger.log_dir}/Samples").mkdir(exist_ok=True, parents=True)
     Path(f"{tb_logger.log_dir}/Reconstructions").mkdir(exist_ok=True, parents=True)
 
-    print(f"======= Training {cfg['model_params']['name']} on {cfg['data_params']['data_name']} =======")
+    #print(f"======= Training {cfg['model_params']['name']} on {cfg['data_params']['data_name']} =======")
     runner.fit(experiment, data)
 
 if __name__ == "__main__":

@@ -3,16 +3,14 @@ import math
 import torch
 from torch import optim
 from models.base_vae import BaseVAE
-# from utils import data_loader
 import pytorch_lightning as pl
-from torchvision import transforms
 import torchvision.utils as vutils
-from torchvision.datasets import CelebA
-from torch.utils.data import DataLoader
-from typing import List, Callable, Union, Any, TypeVar, Tuple
-from utils import plot_loss  # If your plot_loss function is saved in a utils file
+from typing import TypeVar
+
+from utils import plot_loss  # ✅ your plot function
 
 Tensor = TypeVar('Tensor')
+
 
 class VAEXperiment(pl.LightningModule):
 
@@ -24,14 +22,11 @@ class VAEXperiment(pl.LightningModule):
         self.model = vae_model
         self.params = params
         self.curr_device = None
-        self.hold_graph = False
+        self.hold_graph = self.params.get('retain_first_backpass', False)
         self.automatic_optimization = False
+
         self.train_losses = []
         self.val_losses = []
-        try:
-            self.hold_graph = self.params['retain_first_backpass']
-        except:
-            pass
 
     def forward(self, input: Tensor, **kwargs) -> Tensor:
         return self.model(input, **kwargs)
@@ -46,7 +41,6 @@ class VAEXperiment(pl.LightningModule):
         if not isinstance(optimizers, (list, tuple)):
             optimizers = [optimizers]
 
-        # Optionally: Handle multiple optimizers differently
         for idx, opt in enumerate(optimizers):
             loss_dict = self.model.loss_function(
                 *results,
@@ -60,93 +54,129 @@ class VAEXperiment(pl.LightningModule):
             opt.step()
             opt.zero_grad()
 
-            self.log_dict({f"loss_opt{idx}": loss.item(), **{f"{k}_opt{idx}": v.item() for k, v in loss_dict.items() if k != 'loss'}}, sync_dist=True)
-        
+            self.log_dict(
+                {f"loss_opt{idx}": loss.item(),
+                 **{f"{k}_opt{idx}": v.item() for k, v in loss_dict.items() if k != 'loss'}},
+                sync_dist=True)
+
         self.log("train_loss", loss, prog_bar=True, on_epoch=True, logger=True)
-        self.train_losses.append(loss_dict['loss'].item())
-        return loss_dict['loss']
+        self.train_losses.append(loss.item())
+        return loss
 
-
-    def validation_step(self, batch, batch_idx, optimizer_idx = 0):
+    def validation_step(self, batch, batch_idx, optimizer_idx=0):
         real_img, labels = batch
         self.curr_device = real_img.device
 
-        results = self.forward(real_img, labels = labels)
-        val_loss = self.model.loss_function(*results,
-                                            M_N = 1.0, #real_img.shape[0]/ self.num_val_imgs,
-                                            optimizer_idx = optimizer_idx,
-                                            batch_idx = batch_idx)
+        results = self.forward(real_img, labels=labels)
+        val_loss = self.model.loss_function(
+            *results,
+            M_N=1.0,
+            optimizer_idx=optimizer_idx,
+            batch_idx=batch_idx
+        )
 
         self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
         self.val_losses.append(val_loss['loss'].item())
-        
-    def on_validation_end(self) -> None:
-        self.sample_images()
-        
+
+    def on_validation_end(self):
+        # ✅ Only sample reconstructions if training
+        if self.training:
+            self.sample_images()
+
     def sample_images(self):
-        # Get sample reconstruction image            
-        test_input, test_label = next(iter(self.trainer.datamodule.test_dataloader()))
-        test_input = test_input.to(self.curr_device)
-        test_label = test_label.to(self.curr_device)
+        """Save reconstructions of example input"""
+        recon_dir = os.path.join(self.logger.log_dir, "Reconstructions")
+        os.makedirs(recon_dir, exist_ok=True)
 
-#         test_input, test_label = batch
-        recons = self.model.generate(test_input, labels = test_label)
-        vutils.save_image(recons.data,
-                          os.path.join(self.logger.log_dir , 
-                                       "Reconstructions", 
-                                       f"recons_{self.logger.name}_Epoch_{self.current_epoch}.png"),
-                          normalize=True,
-                          nrow=12)
+        if hasattr(self, "example_input_array"):
+            recons = self.forward(self.example_input_array.to(self.device))[0]
+            vutils.save_image(
+                recons.data,
+                os.path.join(recon_dir, f"recons_{self.logger.name}_Epoch_{self.current_epoch}.png"),
+                normalize=True, nrow=8
+            )
+            print(f"✅ Saved sample reconstructions to {recon_dir}")
 
-        try:
-            samples = self.model.sample(144,
-                                        self.curr_device,
-                                        labels = test_label)
-            vutils.save_image(samples.cpu().data,
-                              os.path.join(self.logger.log_dir , 
-                                           "Samples",      
-                                           f"{self.logger.name}_Epoch_{self.current_epoch}.png"),
-                              normalize=True,
-                              nrow=12)
-        except Warning:
-            pass
+    def generate_samples(self, num_samples=64):
+        """Purely generate new samples from latent space"""
+        z = torch.randn(num_samples, self.model.latent_dim).to(self.device)
+        samples = self.model.decode(z)
+
+        save_dir = os.path.join(self.logger.log_dir, "Samples")
+        os.makedirs(save_dir, exist_ok=True)
+
+        vutils.save_image(
+            samples.cpu(),
+            os.path.join(save_dir, f"samples_epoch_{self.current_epoch}.png"),
+            normalize=True, nrow=8
+        )
+        print(f"✅ Generated {num_samples} samples in {save_dir}")
+
+    def reconstruct_test_images(self, dataloader, num_images_per_dataset=10):
+        """Reconstruct images from real test data"""
+        save_dir = os.path.join(self.logger.log_dir, "Reconstructions")
+        os.makedirs(save_dir, exist_ok=True)
+
+        self.model.eval()
+        count = 0
+
+        for batch_idx, (x, y) in enumerate(dataloader):
+            x = x.to(self.device)
+            recons, _, _, _ = self.model(x)
+
+            vutils.save_image(
+                x.cpu(),
+                os.path.join(save_dir, f"input_{batch_idx}.png"),
+                normalize=True, nrow=8
+            )
+
+            vutils.save_image(
+                recons.cpu(),
+                os.path.join(save_dir, f"recons_{batch_idx}.png"),
+                normalize=True, nrow=8
+            )
+
+            count += x.size(0)
+            if count >= num_images_per_dataset:
+                break
+
+        print(f"✅ Reconstructed {count} test images in {save_dir}")
 
     def configure_optimizers(self):
-
         optims = []
         scheds = []
 
-        optimizer = optim.Adam(self.model.parameters(),
-                               lr=self.params['LR'],
-                               weight_decay=self.params['weight_decay'])
+        optimizer = optim.Adam(
+            self.model.parameters(),
+            lr=self.params['LR'],
+            weight_decay=self.params['weight_decay']
+        )
         optims.append(optimizer)
-        # Check if more than 1 optimizer is required (Used for adversarial training)
-        try:
-            if self.params['LR_2'] is not None:
-                optimizer2 = optim.Adam(getattr(self.model,self.params['submodel']).parameters(),
-                                        lr=self.params['LR_2'])
-                optims.append(optimizer2)
-        except:
-            pass
 
-        try:
-            if self.params['scheduler_gamma'] is not None:
-                scheduler = optim.lr_scheduler.ExponentialLR(optims[0],
-                                                             gamma = self.params['scheduler_gamma'])
-                scheds.append(scheduler)
+        if self.params.get('LR_2') is not None:
+            optimizer2 = optim.Adam(
+                getattr(self.model, self.params['submodel']).parameters(),
+                lr=self.params['LR_2']
+            )
+            optims.append(optimizer2)
 
-                # Check if another scheduler is required for the second optimizer
-                try:
-                    if self.params['scheduler_gamma_2'] is not None:
-                        scheduler2 = optim.lr_scheduler.ExponentialLR(optims[1],
-                                                                      gamma = self.params['scheduler_gamma_2'])
-                        scheds.append(scheduler2)
-                except:
-                    pass
-                return optims, scheds
-        except:
-            return optims
-    
+        if self.params.get('scheduler_gamma') is not None:
+            scheduler = optim.lr_scheduler.ExponentialLR(
+                optims[0],
+                gamma=self.params['scheduler_gamma']
+            )
+            scheds.append(scheduler)
+
+            if len(optims) > 1 and self.params.get('scheduler_gamma_2') is not None:
+                scheduler2 = optim.lr_scheduler.ExponentialLR(
+                    optims[1],
+                    gamma=self.params['scheduler_gamma_2']
+                )
+                scheds.append(scheduler2)
+
+            return optims, scheds
+
+        return optims
 
     def on_train_end(self):
         plot_loss(self.train_losses, title="Training Loss", file_name="training_loss")

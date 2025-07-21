@@ -1,74 +1,82 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-
-from models.vae import VAE
-from utils.data_loader import get_dataloaders
-
-from utils.visualizer import test_and_plot
-from utils.visualizer import plot_epoch_loss
-
-
-from tqdm import tqdm
 import os
+from pathlib import Path
+import multiprocessing
+from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning.loggers import TensorBoardLogger
 
-# === Config ===
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-dataset_name = 'pathmnist'
-batch_size = 64
-epochs = 10
-lr = 1e-3
-latent_dim = 20
-save_dir = "outputs"
-epochs_dir = os.path.join(save_dir, "epochs")
-
-os.makedirs(save_dir, exist_ok=True)
-
-# === Load Data ===
-train_loader, val_loader, test_loader = get_dataloaders(dataset_name, batch_size)
-
-# === Model ===
-model = VAE(latent_dim=latent_dim).to(device)
-optimizer = optim.Adam(model.parameters(), lr=lr)
-criterion = nn.BCELoss(reduction='sum')  # use binary cross-entropy for image reconstruction
+from models import vanilla_vae
+from experiment import VAEXperiment
+from dataset import VAEDataset
 
 
-epoch_losses = []
+def main():
+    config = {
+        'VanillaVAE': {
+            'model_params': {
+                'name': 'VanillaVAE',
+                'in_channels': 3,
+                'latent_dim': 64
+            },
+            'data_params': {
+                'data_dir': "Data/",
+                'data_names': ['pathmnist'],
+                'train_batch_size': 128,
+                'val_batch_size': 256,
+                'patch_size': 32,
+                'num_workers': 4
+            },
+            'exp_params': {
+                'LR': 1e-3,
+                'weight_decay': 1e-5,
+                'scheduler_gamma': 0.95,
+                'kld_weight':  0.001,
+                'manual_seed': 42
+            },
+            'trainer_params': {
+                'accelerator': 'auto',
+                'devices': 1
+            },
+            'logging_params': {
+                'save_dir': "logs/",
+                'name': "VanillaVAE_MedMNIST"
+            }
+        }
+    }
 
-# === Training Loop ===
-def loss_function(recon_x, x, mu, logvar):
-    recon_x = recon_x.view(recon_x.size(0), -1)
-    x = x.view(x.size(0), -1)
-    BCE = criterion(recon_x, x)
-    KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    return BCE + KLD
+    MODEL = 'VanillaVAE'
+    cfg = config[MODEL]
 
-for epoch in range(1, epochs + 1):
-    model.train()
-    train_loss = 0
-    pbar = tqdm(train_loader, desc=f"Epoch {epoch}")
+    checkpoint_path = "logs/VanillaVAE_MedMNIST/version_14/checkpoints/epoch=89-step=126630.ckpt"
 
-    for batch in pbar:
-        inputs, labels = batch
-        inputs = inputs.to(device, dtype=torch.float)
-        optimizer.zero_grad()
+    tb_logger = TensorBoardLogger(
+        save_dir=cfg['logging_params']['save_dir'],
+        name=cfg['logging_params']['name'],
+    )
 
-        recon_batch, mu, logvar = model(inputs)
-        loss = loss_function(recon_batch, inputs, mu, logvar)
-        loss.backward()
-        train_loss += loss.item()
-        optimizer.step()
+    seed_everything(cfg['exp_params']['manual_seed'], workers=True)
 
-        pbar.set_postfix(loss=loss.item())
+    model = vanilla_vae.VanillaVAE(**cfg['model_params'])
+    experiment = VAEXperiment.load_from_checkpoint(
+        checkpoint_path,
+        vae_model=model,
+        params=cfg['exp_params']
+    )
 
-    avg_epoch_loss = train_loss / len(train_loader.dataset)
-    epoch_losses.append(avg_epoch_loss)
+    data = VAEDataset(**cfg["data_params"], pin_memory=True)
+    data.setup()
 
-    print(f"Epoch {epoch}, Average loss: {avg_epoch_loss:.4f}")
+    runner = Trainer(logger=tb_logger, **cfg['trainer_params'])
 
-    # Save sample outputs (optional)
-    if epoch % 5 == 0:
-        torch.save(model.state_dict(), os.path.join(epochs_dir, f"vae_epoch{epoch}.pth"))
-        test_and_plot(model, test_loader, device, epoch, save_dir)
-        plot_epoch_loss(epoch_losses, interval=1, save_path= os.path.join(save_dir+'/graphs', f"vae_loss_epoch{epoch}.png"))
+    # ✅ Validate metrics
+    runner.validate(experiment, datamodule=data)
 
+    # ✅ Generate samples
+    experiment.generate_samples(num_samples=64)
+
+    # ✅ Reconstruct test images
+    experiment.reconstruct_test_images(data.val_dataloader(), num_images_per_dataset=10)
+
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    main()
